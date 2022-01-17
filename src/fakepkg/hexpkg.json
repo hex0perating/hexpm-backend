@@ -1,0 +1,6 @@
+{
+    "name": "Dummy Package",
+    "version": "1.0.0",
+    "description": "Dummy Package",
+    "installer": "index.js"
+}
