@@ -5,13 +5,34 @@ const express = require("express"),
 
 let packages = [];
 
-app.get("/*.pkg", async function(req, res) {
-    let pkg = req.originalUrl.replace('/', '').replace("%20", " ").replace(".pkg", "");
+app.get("/*", async function(req, res) {
+    let pkg = req.originalUrl.replace("%20", " ");
+    let pkg_arr = pkg.split("/");
+    let pkg_name = pkg_arr[1];
+    let pkg_fetch = pkg_arr[2];
 
-    for await (let p of packages) {
-        if (p.name == pkg) {
-            res.send(Buffer.from(p.buffer, 'binary'));
-            return;
+    for await(let item of packages) {
+        if (pkg_name == item.name) {
+            console.log(`📦 Fetching package file ${pkg_name}/${pkg_fetch}`);
+            let pkg_path = `${item.dir}/${pkg_fetch}`;
+            
+            let file = "";
+
+            try {
+                file = await fs.readFileSync(pkg_path, "utf-8");
+            } catch (e) {
+                console.log(`📦 File ${pkg_name}/${pkg_fetch} not found`);
+                res.status(404).send(`File ${pkg_fetch} not found`);
+                return;
+            }
+
+            if (pkg_path.endsWith(".json")) {
+                res.setHeader('Content-Type', 'application/json');
+            } else if (pkg_path.endsWith(".js")) {
+                res.setHeader('Content-Type', 'application/javascript');
+            }
+
+            res.send(file);
         }
     }
 })
@@ -31,15 +52,6 @@ app.get("/packages.json", async function(req, res) {
 })
 
 async function packagePkgs() {
-    async function zip(path) {
-        return new Promise((resolve, reject) => {
-            zipdir(path, (err, buffer) => {
-                if (err) throw(err);
-
-                resolve(buffer);
-            });
-        })
-    }
     let packageList = await fs.readdirSync("./src");
     console.log(`📦 Building packages...`);
     for await (let package of packageList) {
@@ -47,21 +59,21 @@ async function packagePkgs() {
         let packagePath = `./src/${package}`;
         let packageJSON = JSON.parse(await fs.readFileSync(`${packagePath}/hexpkg.json`, "utf-8"));
         console.log(`📦 Building package ${packageJSON.name}`);
-        
-        let buffer = await zip(packagePath);
 
         packages.push({
             name: packageJSON.name,
             version: packageJSON.version,
-            buffer: buffer
+            dir: packagePath,
         })
 
         console.log(`📦 Package ${packageJSON.name} built`);
     }
-    app.listen(process.env.PORT || 80, function() {
-        function getPort() {//wtf?
-            return process.env.PORT || 80;
-        }
+
+    function getPort() {
+        return process.env.PORT || 80;
+    }
+
+    app.listen(getPort(), function() {
         console.log("✅ Listening on port " + getPort()); 
     })
 }
