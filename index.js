@@ -6,7 +6,35 @@ const express = require("express"),
 let packages = [];
 
 app.get("/*", async function(req, res) {
-    let pkg = req.originalUrl.replace("%20", " ");
+    if (req.originalUrl == "/packages.json") {
+        let newPkgs = [];
+
+        for await (let pkg of packages) {
+            let hexpkg = require(pkg.dir + "/hexpkg.json");
+            newPkgs.push({
+                name: pkg.name,
+                version: pkg.version,
+                description: hexpkg.description,
+                url: `http://localhost:${process.env.PORT || 80}/${pkg.name}`,
+                bufferUrl: `http://localhost:${process.env.PORT || 80}/zip/${pkg.name}.zip`
+            })
+        }
+
+        res.send(newPkgs)
+        return;
+    } else if (req.originalUrl.replaceAll("%20", " ").startsWith("/zip/")) {
+        console.log(`📦 Serving zip file ${req.originalUrl.replaceAll("%20", " ").split("/")[2]}`);
+        let origUrl = req.originalUrl.replaceAll("%20", " ");
+
+        let pkgName = origUrl.replaceAll("/zip/", "").replace(".zip", "");
+
+        let pkg = packages.find(pkg => pkg.name == pkgName);
+
+        res.send(Buffer.from(pkg.buffer, "binary"));
+        return;
+    }
+
+    let pkg = req.originalUrl.replaceAll("%20", " ");
     let pkg_arr = pkg.split("/");
     let pkg_name = pkg_arr[1];
     let pkg_fetch = pkg_arr[2];
@@ -33,27 +61,34 @@ app.get("/*", async function(req, res) {
             }
 
             res.send(file);
+
+            return;
         }
     }
-})
-
-app.get("/packages.json", async function(req, res) {
-    let newPkgs = [];
-
-    for await (let pkg of packages) {
-        newPkgs.push({
-            name: pkg.name,
-            version: pkg.version,
-            url: `http://localhost:${process.env.PORT || 80}/${pkg.name}.pkg`
-        })
-    }
-
-    res.send(newPkgs)
+    
+    res.status(404).send(`Package ${pkg_name} not found`);
 })
 
 async function packagePkgs() {
-    let packageList = await fs.readdirSync("./src");
+    async function zip(path) {
+        return new Promise((resolve, reject) => {
+            zipdir(path, function (err, buffer) {
+                if (err) reject(err);
+                resolve(buffer);
+            });
+        })
+    }
+
+    console.log("📦 Downloading packages...");
+
+    await fs.rmSync("src", { recursive: true });
+    await fs.mkdirSync("src");
+
+    let fetcher = require("./fetchPkgs.js");
+    await fetcher();
+
     console.log(`📦 Building packages...`);
+    let packageList = await fs.readdirSync("./src");
     for await (let package of packageList) {
         console.log(`📦 Fetching package data`);
         let packagePath = `./src/${package}`;
@@ -64,6 +99,7 @@ async function packagePkgs() {
             name: packageJSON.name,
             version: packageJSON.version,
             dir: packagePath,
+            buffer: await zip(packagePath)
         })
 
         console.log(`📦 Package ${packageJSON.name} built`);
