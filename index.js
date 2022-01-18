@@ -14,10 +14,7 @@ app.get("/*", async function(req, res) {
             newPkgs.push({
                 name: pkg.name,
                 version: pkg.version,
-                description: hexpkg.description,
-                url: `http://localhost:${process.env.PORT || 80}/${pkg.name}`,
-                bufferUrl: `http://localhost:${process.env.PORT || 80}/zip/${pkg.name}.zip`
-            })
+                description: hexpkg.description            })
         }
 
         res.send(newPkgs)
@@ -81,7 +78,11 @@ async function packagePkgs() {
 
     console.log("📦 Downloading packages...");
 
-    await fs.rmSync("src", { recursive: true });
+    try {
+        await fs.rmSync("src", { recursive: true });
+    } catch (e) {
+        console.log("📦 Failed to delete src folder, possibly doesn't exist");
+    }
     await fs.mkdirSync("src");
 
     let fetcher = require("./fetchPkgs.js");
