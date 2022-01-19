@@ -109,3 +109,5 @@ dist
 
 # Packages
 src/
+
+fetchLocalPkgs.js

@@ -5,7 +5,17 @@ const express = require("express"),
 
 let packages = [];
 
+let reprovision = false;
+
+function sleep(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
 app.get("/*", async function(req, res) {
+    while (reprovision) {
+        await sleep(1000);
+    }
+
     if (req.originalUrl == "/packages.json") {
         let newPkgs = [];
 
@@ -14,7 +24,8 @@ app.get("/*", async function(req, res) {
             newPkgs.push({
                 name: pkg.name,
                 version: pkg.version,
-                description: hexpkg.description            })
+                description: hexpkg.description  
+            })
         }
 
         res.send(newPkgs)
@@ -85,7 +96,14 @@ async function packagePkgs() {
     }
     await fs.mkdirSync("src");
 
-    let fetcher = require("./fetchPkgs.js");
+    let fetcher = "";
+
+    if (process.env.LOCAL) {
+        fetcher = require("./fetchLocalPkgs.js");// for hoster to configure
+    } else {
+        fetcher = require("./fetchPkgs.js");
+    }
+
     await fetcher();
 
     console.log(`📦 Building packages...`);
@@ -115,4 +133,66 @@ async function packagePkgs() {
     })
 }
 
+async function reprovisionTimer() {
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+
+    while (true) {
+        await sleep(120000); // 2 minutes
+        reprovision = true;
+        console.log("📦 Reprovisioning server...");
+
+        async function zip(path) {
+            return new Promise((resolve, reject) => {
+                zipdir(path, function (err, buffer) {
+                    if (err) reject(err);
+                    resolve(buffer);
+                });
+            })
+        }
+    
+        console.log("📦 Downloading packages...");
+    
+        try {
+            await fs.rmSync("src", { recursive: true });
+        } catch (e) {
+            console.log("📦 Failed to delete src folder, possibly doesn't exist");
+        }
+        await fs.mkdirSync("src");
+    
+        let fetcher = "";
+    
+        if (process.env.LOCAL) {
+            fetcher = require("./fetchLocalPkgs.js");// for hoster to configure
+        } else {
+            fetcher = require("./fetchPkgs.js");
+        }
+    
+        await fetcher();
+    
+        console.log(`📦 Building packages...`);
+        let packageList = await fs.readdirSync("./src");
+        for await (let package of packageList) {
+            console.log(`📦 Fetching package data`);
+            let packagePath = `./src/${package}`;
+            let packageJSON = JSON.parse(await fs.readFileSync(`${packagePath}/hexpkg.json`, "utf-8"));
+            console.log(`📦 Building package ${packageJSON.name}`);
+    
+            packages.push({
+                name: packageJSON.name,
+                version: packageJSON.version,
+                dir: packagePath,
+                buffer: await zip(packagePath)
+            })
+    
+            console.log(`📦 Package ${packageJSON.name} built`);
+        }
+
+        reprovision = false;
+        console.log("📦 Reprovisioned server.");
+    }
+}
+
 packagePkgs();
+reprovisionTimer();
