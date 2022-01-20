@@ -141,7 +141,11 @@ async function reprovisionTimer() {
     while (true) {
         await sleep(120000); // 2 minutes
         reprovision = true;
+
         console.log("📦 Reprovisioning server...");
+        
+        await sleep(100); // waits for any remaining jobs to finish before clearing the buffer
+        packages = [];
 
         async function zip(path) {
             return new Promise((resolve, reject) => {
